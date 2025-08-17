@@ -12,7 +12,7 @@ import (
 	"github.com/tetratelabs/wazero"
 	"github.com/tetratelabs/wazero/api"
 	"github.com/tetratelabs/wazero/experimental"
-	"gopkg.in/yaml.v3"
+	"sigs.k8s.io/yaml"
 
 	"github.com/xxnuo/gobergamot/internal/errgroup"
 	"github.com/xxnuo/gobergamot/internal/gen"

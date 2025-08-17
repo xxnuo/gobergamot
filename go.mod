@@ -1,14 +1,17 @@
 module github.com/xxnuo/gobergamot
 
-go 1.22.0
+go 1.24.5
 
 require (
-	github.com/jerbob92/wazero-emscripten-embind v1.5.0
-	github.com/tetratelabs/wazero v1.6.1-0.20240212014225-184a6a0d1ec0
-	gopkg.in/yaml.v3 v3.0.1
+	github.com/jerbob92/wazero-emscripten-embind v1.5.2
+	github.com/tetratelabs/wazero v1.9.0
+	sigs.k8s.io/yaml v1.6.0
 )
 
-require golang.org/x/text v0.14.0 // indirect
+require (
+	go.yaml.in/yaml/v2 v2.4.2 // indirect
+	golang.org/x/text v0.15.0 // indirect
+)
 
 retract (
 	v0.1.2 // contains only retractions
