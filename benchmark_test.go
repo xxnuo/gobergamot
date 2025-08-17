@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/KSpaceer/gobergamot"
+	"github.com/xxnuo/gobergamot"
 )
 
 func BenchmarkSingleSentence(b *testing.B) {

@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/KSpaceer/gobergamot"
-	"github.com/KSpaceer/gobergamot/internal/wasm"
+	"github.com/xxnuo/gobergamot"
+	"github.com/xxnuo/gobergamot/internal/wasm"
 )
 
 const (

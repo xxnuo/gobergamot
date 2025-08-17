@@ -1,4 +1,4 @@
-module github.com/KSpaceer/gobergamot
+module github.com/xxnuo/gobergamot
 
 go 1.22.0
 

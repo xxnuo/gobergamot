@@ -14,9 +14,9 @@ import (
 	"github.com/tetratelabs/wazero/experimental"
 	"gopkg.in/yaml.v3"
 
-	"github.com/KSpaceer/gobergamot/internal/errgroup"
-	"github.com/KSpaceer/gobergamot/internal/gen"
-	"github.com/KSpaceer/gobergamot/internal/wasm"
+	"github.com/xxnuo/gobergamot/internal/errgroup"
+	"github.com/xxnuo/gobergamot/internal/gen"
+	"github.com/xxnuo/gobergamot/internal/wasm"
 )
 
 type FilesBundle struct {
