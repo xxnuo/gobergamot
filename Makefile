@@ -81,7 +81,7 @@ gen: internal/wasm/bergamot-translator-worker.wasm
 
 test:
 	@go test ./...
-	
+
 mem:
-	go test -v -run TestTranslatorMemoryUsage ./...
-	go test -v -run TestTranslatorMemoryLeakCheck -timeout 5m ./...
+	go test -v -run TestTranslatorMemoryUsage
+	go test -v -run TestTranslatorMemoryLeakCheck -timeout 5m
