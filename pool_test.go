@@ -3,6 +3,7 @@ package gobergamot_test
 import (
 	"bytes"
 	"context"
+	"io"
 	"testing"
 	"time"
 
@@ -24,7 +25,7 @@ func TestPool(t *testing.T) {
 			FilesBundle: gobergamot.FilesBundle{
 				Model:            bytes.NewBuffer([]byte{}),
 				LexicalShortlist: bytes.NewBuffer([]byte{}),
-				Vocabulary:       bytes.NewBuffer([]byte{}),
+				Vocabularies:     []io.Reader{bytes.NewBuffer([]byte{})},
 			},
 		},
 		PoolSize: 3,

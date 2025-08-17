@@ -34,7 +34,7 @@ func TestTranslator_New(t *testing.T) {
 				FilesBundle: gobergamot.FilesBundle{
 					Model:            bytes.NewReader(nil),
 					LexicalShortlist: nil,
-					Vocabulary:       bytes.NewReader(nil),
+					Vocabularies:     []io.Reader{bytes.NewReader(nil)},
 				},
 				WASMCache: cache,
 			},
@@ -46,7 +46,7 @@ func TestTranslator_New(t *testing.T) {
 				FilesBundle: gobergamot.FilesBundle{
 					Model:            bytes.NewReader(nil),
 					LexicalShortlist: bytes.NewReader(nil),
-					Vocabulary:       nil,
+					Vocabularies:     nil,
 				},
 				WASMCache: cache,
 			},
@@ -58,7 +58,7 @@ func TestTranslator_New(t *testing.T) {
 				FilesBundle: gobergamot.FilesBundle{
 					Model:            bytes.NewReader(nil),
 					LexicalShortlist: bytes.NewReader(nil),
-					Vocabulary:       bytes.NewReader(nil),
+					Vocabularies:     []io.Reader{bytes.NewReader(nil)},
 				},
 				WASMCache: cache,
 			},
@@ -76,6 +76,14 @@ func TestTranslator_New(t *testing.T) {
 			name: "valid with slow paths",
 			cfg: gobergamot.Config{
 				FilesBundle: strictReaderWrapper(testBundle(t)),
+				WASMCache:   cache,
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid with two vocabularies",
+			cfg: gobergamot.Config{
+				FilesBundle: testBundleWithTwoVocabularies(t),
 				WASMCache:   cache,
 			},
 			wantErr: false,
@@ -209,16 +217,32 @@ func testBundle(t *testing.T) gobergamot.FilesBundle {
 	return gobergamot.FilesBundle{
 		Model:            bytes.NewBuffer(testModel),
 		LexicalShortlist: bytes.NewBuffer(testShortlist),
-		Vocabulary:       bytes.NewBuffer(testVocabulary),
+		Vocabularies:     []io.Reader{bytes.NewBuffer(testVocabulary)},
+	}
+}
+
+func testBundleWithTwoVocabularies(t *testing.T) gobergamot.FilesBundle {
+	if t != nil {
+		t.Helper()
+	}
+	return gobergamot.FilesBundle{
+		Model:            bytes.NewBuffer(testModel),
+		LexicalShortlist: bytes.NewBuffer(testShortlist),
+		Vocabularies:     []io.Reader{bytes.NewBuffer(testVocabulary), bytes.NewBuffer(testVocabulary)},
 	}
 }
 
 // wrapping files readers to avoid readers type assertion which is done for fast size/data access.
 func strictReaderWrapper(bundle gobergamot.FilesBundle) gobergamot.FilesBundle {
+	vocabularies := make([]io.Reader, len(bundle.Vocabularies))
+	for i, vocab := range bundle.Vocabularies {
+		vocabularies[i] = readerWrapper{r: vocab}
+	}
+
 	return gobergamot.FilesBundle{
 		Model:            readerWrapper{r: bundle.Model},
 		LexicalShortlist: readerWrapper{r: bundle.LexicalShortlist},
-		Vocabulary:       readerWrapper{r: bundle.Vocabulary},
+		Vocabularies:     vocabularies,
 	}
 }
 

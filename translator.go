@@ -1,7 +1,6 @@
 package gobergamot
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -14,6 +13,8 @@ import (
 	"github.com/tetratelabs/wazero/experimental"
 	"sigs.k8s.io/yaml"
 
+	"bytes"
+
 	"github.com/xxnuo/gobergamot/internal/errgroup"
 	"github.com/xxnuo/gobergamot/internal/gen"
 	"github.com/xxnuo/gobergamot/internal/wasm"
@@ -24,8 +25,11 @@ type FilesBundle struct {
 	Model io.Reader
 	// Byte array of shortlist. Required
 	LexicalShortlist io.Reader
-	// Byte array of vocabulary to translate between source and target languages. Required
-	Vocabulary io.Reader
+	// Byte array of vocabulary to translate between source and target languages.
+	// If only one vocabulary is provided, it will be used for both source and target languages.
+	// If two vocabularies are provided, the first one will be used as source vocabulary and the second one as target vocabulary.
+	// At least one vocabulary is required.
+	Vocabularies []io.Reader
 }
 
 type Config struct {
@@ -58,7 +62,7 @@ type Config struct {
 
 var (
 	ErrModelMissing            = errors.New("model is required")
-	ErrVocabularyMissing       = errors.New("vocabulary is required")
+	ErrVocabulariesMissing     = errors.New("at least one vocabulary is required")
 	ErrLexicalShortlistMissing = errors.New("lexical shortlist is required")
 )
 
@@ -67,8 +71,8 @@ func (cfg Config) Validate() error {
 	if cfg.Model == nil {
 		err = errors.Join(err, ErrModelMissing)
 	}
-	if cfg.Vocabulary == nil {
-		err = errors.Join(err, ErrVocabularyMissing)
+	if len(cfg.Vocabularies) == 0 {
+		err = errors.Join(err, ErrVocabulariesMissing)
 	}
 	if cfg.LexicalShortlist == nil {
 		err = errors.Join(err, ErrLexicalShortlistMissing)
@@ -141,7 +145,7 @@ func New(ctx context.Context, cfg Config) (*Translator, error) {
 		ctx,
 		tr.embindEngine,
 		tr.module,
-		newAlignedMemoryDataBundle(cfg.Model, cfg.LexicalShortlist, cfg.Vocabulary),
+		newAlignedMemoryDataBundle(cfg.Model, cfg.LexicalShortlist, cfg.Vocabularies),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get aligned memory views: %w", err)
@@ -156,9 +160,14 @@ func New(ctx context.Context, cfg Config) (*Translator, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create aligned memory list: %w", err)
 	}
-	if err := vocabularies.Push_back(ctx, bundle[vocabularyIndex].asEmbindClass()); err != nil {
-		return nil, fmt.Errorf("failed to push back vocabulary: %w", err)
+
+	// Add all vocabularies to the list
+	for _, vocab := range bundle.vocabularies {
+		if err := vocabularies.Push_back(ctx, vocab.asEmbindClass()); err != nil {
+			return nil, fmt.Errorf("failed to push back vocabulary: %w", err)
+		}
 	}
+
 	bergamotCfg, err := yaml.Marshal(cfg.BergamotOptions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert bergamot (marian) options to YAML: %w", err)
@@ -167,8 +176,8 @@ func New(ctx context.Context, cfg Config) (*Translator, error) {
 		tr.embindEngine,
 		ctx,
 		string(bergamotCfg),
-		bundle[modelIndex].asEmbindClass(),
-		bundle[shortlistIndex].asEmbindClass(),
+		bundle.model.asEmbindClass(),
+		bundle.shortlist.asEmbindClass(),
 		vocabularies,
 		// quality estimation is not used
 		nil,
@@ -315,7 +324,11 @@ func (i alignedMemoryInfo) asEmbindClass() embind.ClassBase {
 	return i.memory
 }
 
-type alignedMemoriesBundle [3]alignedMemoryInfo
+type alignedMemoriesBundle struct {
+	model        alignedMemoryInfo
+	shortlist    alignedMemoryInfo
+	vocabularies []alignedMemoryInfo
+}
 
 const (
 	modelIndex = iota
@@ -329,21 +342,33 @@ const (
 	vocabularyAlignment = 64
 )
 
-func newAlignedMemoryDataBundle(model, shortlist, vocab io.Reader) alignedMemoriesBundle {
-	return alignedMemoriesBundle{
-		modelIndex: {file: &alignedMemoryFile{
-			Reader:    model,
-			Alignment: modelAlignment,
-		}},
-		shortlistIndex: {file: &alignedMemoryFile{
-			Reader:    shortlist,
-			Alignment: shortlistAlignment,
-		}},
-		vocabularyIndex: {file: &alignedMemoryFile{
-			Reader:    vocab,
-			Alignment: vocabularyAlignment,
-		}},
+func newAlignedMemoryDataBundle(model, shortlist io.Reader, vocabularies []io.Reader) alignedMemoriesBundle {
+	bundle := alignedMemoriesBundle{
+		model: alignedMemoryInfo{
+			file: &alignedMemoryFile{
+				Reader:    model,
+				Alignment: modelAlignment,
+			},
+		},
+		shortlist: alignedMemoryInfo{
+			file: &alignedMemoryFile{
+				Reader:    shortlist,
+				Alignment: shortlistAlignment,
+			},
+		},
+		vocabularies: make([]alignedMemoryInfo, len(vocabularies)),
 	}
+
+	for i, vocab := range vocabularies {
+		bundle.vocabularies[i] = alignedMemoryInfo{
+			file: &alignedMemoryFile{
+				Reader:    vocab,
+				Alignment: vocabularyAlignment,
+			},
+		}
+	}
+
+	return bundle
 }
 
 func enrichAlignedMemoriesBundle(
@@ -360,11 +385,28 @@ func enrichAlignedMemoriesBundle(
 	// growing module memory to avoid extra allocations
 	growModuleMemory(mod, bundle)
 
-	for i := range bundle {
-		if bundle[i].isEmpty() {
+	// Process model
+	if !bundle.model.isEmpty() {
+		bundle.model.memory, err = gen.NewClassAlignedMemory(embindEng, ctx, bundle.model.size, uint32(bundle.model.file.Alignment))
+		if err != nil {
+			return alignedMemoriesBundle{}, err
+		}
+	}
+
+	// Process shortlist
+	if !bundle.shortlist.isEmpty() {
+		bundle.shortlist.memory, err = gen.NewClassAlignedMemory(embindEng, ctx, bundle.shortlist.size, uint32(bundle.shortlist.file.Alignment))
+		if err != nil {
+			return alignedMemoriesBundle{}, err
+		}
+	}
+
+	// Process vocabularies
+	for i := range bundle.vocabularies {
+		if bundle.vocabularies[i].isEmpty() {
 			continue
 		}
-		bundle[i].memory, err = gen.NewClassAlignedMemory(embindEng, ctx, bundle[i].size, uint32(bundle[i].file.Alignment))
+		bundle.vocabularies[i].memory, err = gen.NewClassAlignedMemory(embindEng, ctx, bundle.vocabularies[i].size, uint32(bundle.vocabularies[i].file.Alignment))
 		if err != nil {
 			return alignedMemoriesBundle{}, err
 		}
@@ -372,11 +414,29 @@ func enrichAlignedMemoriesBundle(
 
 	// after allocations byte views may become invalid,
 	// so we're getting them after creating all AlignedMemory instances
-	for i := range bundle {
-		if bundle[i].isEmpty() {
+
+	// Process model view
+	if !bundle.model.isEmpty() {
+		bundle.model.view, err = getAlignedMemoryByteView(ctx, bundle.model.memory)
+		if err != nil {
+			return alignedMemoriesBundle{}, err
+		}
+	}
+
+	// Process shortlist view
+	if !bundle.shortlist.isEmpty() {
+		bundle.shortlist.view, err = getAlignedMemoryByteView(ctx, bundle.shortlist.memory)
+		if err != nil {
+			return alignedMemoriesBundle{}, err
+		}
+	}
+
+	// Process vocabularies views
+	for i := range bundle.vocabularies {
+		if bundle.vocabularies[i].isEmpty() {
 			continue
 		}
-		bundle[i].view, err = getAlignedMemoryByteView(ctx, bundle[i].memory)
+		bundle.vocabularies[i].view, err = getAlignedMemoryByteView(ctx, bundle.vocabularies[i].memory)
 		if err != nil {
 			return alignedMemoriesBundle{}, err
 		}
@@ -388,14 +448,33 @@ func enrichAlignedMemoriesBundle(
 func enrichBundleWithSizes(ctx context.Context, bundle alignedMemoriesBundle) (alignedMemoriesBundle, error) {
 	eg := errgroup.New()
 
-	for i := range bundle {
-		if bundle[i].isEmpty() {
+	// Process model size
+	if !bundle.model.isEmpty() {
+		eg.Go(func() error {
+			size, err := bundle.model.file.size()
+			bundle.model.size = size
+			return err
+		})
+	}
+
+	// Process shortlist size
+	if !bundle.shortlist.isEmpty() {
+		eg.Go(func() error {
+			size, err := bundle.shortlist.file.size()
+			bundle.shortlist.size = size
+			return err
+		})
+	}
+
+	// Process vocabularies sizes
+	for i := range bundle.vocabularies {
+		if bundle.vocabularies[i].isEmpty() {
 			continue
 		}
 		i := i
 		eg.Go(func() error {
-			size, err := bundle[i].file.size()
-			bundle[i].size = size
+			size, err := bundle.vocabularies[i].file.size()
+			bundle.vocabularies[i].size = size
 			return err
 		})
 	}
@@ -408,11 +487,23 @@ const wasmMemoryPageSize = uint32(65536)
 
 func growModuleMemory(mod api.Module, bundle alignedMemoriesBundle) {
 	var size uint32
-	for i := range bundle {
-		if bundle[i].isEmpty() {
+
+	// Add model size
+	if !bundle.model.isEmpty() {
+		size += bundle.model.size
+	}
+
+	// Add shortlist size
+	if !bundle.shortlist.isEmpty() {
+		size += bundle.shortlist.size
+	}
+
+	// Add vocabularies sizes
+	for i := range bundle.vocabularies {
+		if bundle.vocabularies[i].isEmpty() {
 			continue
 		}
-		size += bundle[i].size
+		size += bundle.vocabularies[i].size
 	}
 
 	mem := mod.Memory()
@@ -444,15 +535,32 @@ func getAlignedMemoryByteView(ctx context.Context, memory *gen.ClassAlignedMemor
 
 func fillBundleViews(ctx context.Context, bundle alignedMemoriesBundle) (alignedMemoriesBundle, error) {
 	eg := errgroup.New()
-	for i := range bundle {
-		if bundle[i].isEmpty() {
+
+	// Fill model view
+	if !bundle.model.isEmpty() {
+		eg.Go(func() error {
+			return fillByteArrayView(ctx, bundle.model.view, bundle.model.file.Reader, bundle.model.size)
+		})
+	}
+
+	// Fill shortlist view
+	if !bundle.shortlist.isEmpty() {
+		eg.Go(func() error {
+			return fillByteArrayView(ctx, bundle.shortlist.view, bundle.shortlist.file.Reader, bundle.shortlist.size)
+		})
+	}
+
+	// Fill vocabularies views
+	for i := range bundle.vocabularies {
+		if bundle.vocabularies[i].isEmpty() {
 			continue
 		}
 		i := i
 		eg.Go(func() error {
-			return fillByteArrayView(ctx, bundle[i].view, bundle[i].file.Reader, bundle[i].size)
+			return fillByteArrayView(ctx, bundle.vocabularies[i].view, bundle.vocabularies[i].file.Reader, bundle.vocabularies[i].size)
 		})
 	}
+
 	err := eg.Wait()
 	return bundle, err
 }

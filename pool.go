@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 
 	"github.com/tetratelabs/wazero"
 
@@ -73,9 +74,9 @@ type Pool struct {
 	eg   errgroup.Errgroup
 	done chan struct{}
 
-	modelBytes      []byte
-	shortlistBytes  []byte
-	vocabularyBytes []byte
+	modelBytes        []byte
+	shortlistBytes    []byte
+	vocabulariesBytes [][]byte
 }
 
 type workerRequest struct {
@@ -167,7 +168,13 @@ func (p *Pool) buildTranslators(ctx context.Context) ([]*Translator, error) {
 			cfg := p.cfg.Config
 			cfg.Model = bytes.NewBuffer(p.modelBytes)
 			cfg.LexicalShortlist = bytes.NewBuffer(p.shortlistBytes)
-			cfg.Vocabulary = bytes.NewBuffer(p.vocabularyBytes)
+
+			// Create vocabularies readers
+			vocabularies := make([]io.Reader, len(p.vocabulariesBytes))
+			for j, vocabBytes := range p.vocabulariesBytes {
+				vocabularies[j] = bytes.NewBuffer(vocabBytes)
+			}
+			cfg.Vocabularies = vocabularies
 
 			translator, err := New(ctx, cfg)
 			translators[i] = translator
@@ -184,7 +191,6 @@ func filesToBytes(p *Pool) error {
 	wrappingFile := new(alignedMemoryFile)
 
 	wrappingFile.Reader = p.cfg.Model
-
 	p.modelBytes, err = wrappingFile.readAll()
 	if err != nil {
 		return fmt.Errorf("failed to read model: %w", err)
@@ -196,10 +202,15 @@ func filesToBytes(p *Pool) error {
 		return fmt.Errorf("failed to read shortlist: %w", err)
 	}
 
-	wrappingFile.Reader = p.cfg.Vocabulary
-	p.vocabularyBytes, err = wrappingFile.readAll()
-	if err != nil {
-		return fmt.Errorf("failed to read vocabulary: %w", err)
+	// Read all vocabularies
+	p.vocabulariesBytes = make([][]byte, len(p.cfg.Vocabularies))
+	for i, vocab := range p.cfg.Vocabularies {
+		wrappingFile.Reader = vocab
+		vocabBytes, err := wrappingFile.readAll()
+		if err != nil {
+			return fmt.Errorf("failed to read vocabulary %d: %w", i, err)
+		}
+		p.vocabulariesBytes[i] = vocabBytes
 	}
 
 	return nil
