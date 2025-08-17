@@ -88,6 +88,14 @@ func TestTranslator_New(t *testing.T) {
 			},
 			wantErr: false,
 		},
+		{
+			name: "valid with enzh model",
+			cfg: gobergamot.Config{
+				FilesBundle: testBundleEnZh(t),
+				WASMCache:   cache,
+			},
+			wantErr: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -201,14 +209,98 @@ func TestTranslator_Translate(t *testing.T) {
 	}
 }
 
-//go:embed testdata/model.enru.intgemm.alphas.bin
+func TestTranslator_TranslateEnZh(t *testing.T) {
+	ctx := context.Background()
+
+	stdout, stderr := bytes.NewBuffer(nil), bytes.NewBuffer(nil)
+
+	translator, err := gobergamot.New(ctx, gobergamot.Config{
+		CompileConfig: wasm.CompileConfig{
+			Stderr: stderr,
+			Stdout: stdout,
+		},
+		FilesBundle: testBundleEnZh(t),
+	})
+	if err != nil {
+		t.Fatalf("failed to create translator: %v", err)
+	}
+	defer func() {
+		if err := translator.Close(ctx); err != nil {
+			t.Fatalf("failed to close translator: %v", err)
+		}
+	}()
+
+	tests := []struct {
+		name         string
+		request      gobergamot.TranslationRequest
+		wantErr      bool
+		wantedOutput string
+	}{
+		{
+			name: "Hello World!",
+			request: gobergamot.TranslationRequest{
+				Text: "Hello, World!",
+			},
+			wantedOutput: "你好,世界!",
+		},
+		{
+			name: "text",
+			request: gobergamot.TranslationRequest{
+				Text: "Computers have become an integral part of our daily lives.",
+			},
+			wantedOutput: "计算机已经成为我们日常生活中不可或缺的一部分。",
+		},
+		{
+			name: "html hello world",
+			request: gobergamot.TranslationRequest{
+				Text:    "<a href=\"link.com/path/endpoint?query=parameter\">Hello, World!</a>",
+				Options: gobergamot.TranslationOptions{HTML: true},
+			},
+			wantedOutput: "<a href=\"link.com/path/endpoint?query=parameter\">你好,世界!</a>",
+		},
+	}
+
+	for _, tt := range tests {
+		stdout.Reset()
+		stderr.Reset()
+		t.Run(tt.name, func(t *testing.T) {
+			output, err := translator.Translate(ctx, tt.request)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf(
+					"got error %v, expected wantErr %t\n\nstdout: %s\n\nstderr: %s",
+					err,
+					tt.wantErr,
+					stdout.String(),
+					stderr.String(),
+				)
+			}
+			if output != tt.wantedOutput {
+				t.Errorf("\nexpected: %s\ngot: %s", tt.wantedOutput, output)
+			}
+		})
+	}
+}
+
+//go:embed test/enru/model.enru.intgemm.alphas.bin
 var testModel []byte
 
-//go:embed testdata/lex.50.50.enru.s2t.bin
+//go:embed test/enru/lex.50.50.enru.s2t.bin
 var testShortlist []byte
 
-//go:embed testdata/vocab.enru.spm
+//go:embed test/enru/vocab.enru.spm
 var testVocabulary []byte
+
+//go:embed test/enzh/model.enzh.intgemm.alphas.bin
+var testModelEnZh []byte
+
+//go:embed test/enzh/lex.50.50.enzh.s2t.bin
+var testShortlistEnZh []byte
+
+//go:embed test/enzh/srcvocab.enzh.spm
+var testSrcVocabularyEnZh []byte
+
+//go:embed test/enzh/trgvocab.enzh.spm
+var testTrgVocabularyEnZh []byte
 
 func testBundle(t *testing.T) gobergamot.FilesBundle {
 	if t != nil {
@@ -229,6 +321,17 @@ func testBundleWithTwoVocabularies(t *testing.T) gobergamot.FilesBundle {
 		Model:            bytes.NewBuffer(testModel),
 		LexicalShortlist: bytes.NewBuffer(testShortlist),
 		Vocabularies:     []io.Reader{bytes.NewBuffer(testVocabulary), bytes.NewBuffer(testVocabulary)},
+	}
+}
+
+func testBundleEnZh(t *testing.T) gobergamot.FilesBundle {
+	if t != nil {
+		t.Helper()
+	}
+	return gobergamot.FilesBundle{
+		Model:            bytes.NewBuffer(testModelEnZh),
+		LexicalShortlist: bytes.NewBuffer(testShortlistEnZh),
+		Vocabularies:     []io.Reader{bytes.NewBuffer(testSrcVocabularyEnZh), bytes.NewBuffer(testTrgVocabularyEnZh)},
 	}
 }
 

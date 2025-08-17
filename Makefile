@@ -6,7 +6,7 @@ EMSDK_DIR=$(ROOT)/third_party/emsdk/upstream/emscripten
 
 DIST_TARGETS=dist/bergamot-translator-worker.wasm dist/bergamot-translator-worker.debug.wasm
 
-.PHONY: lib
+.PHONY: lib test
 lib: $(DIST_TARGETS)
 
 clean:
