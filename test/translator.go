@@ -3,8 +3,10 @@ package gobergamot_test
 import (
 	"bytes"
 	"context"
-	_ "embed"
+	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/tetratelabs/wazero"
@@ -281,35 +283,95 @@ func TestTranslator_TranslateEnZh(t *testing.T) {
 	}
 }
 
-//go:embed models/enru/model.enru.intgemm.alphas.bin
-var testModel []byte
+// 从文件路径加载模型文件
+func loadModelFile(path string) (io.Reader, error) {
+	// 获取项目根目录
+	projectRoot, err := getProjectRoot()
+	if err != nil {
+		return nil, err
+	}
 
-//go:embed models/enru/lex.50.50.enru.s2t.bin
-var testShortlist []byte
+	fullPath := filepath.Join(projectRoot, path)
+	file, err := os.Open(fullPath)
+	if err != nil {
+		return nil, err
+	}
 
-//go:embed models/enru/vocab.enru.spm
-var testVocabulary []byte
+	// 读取文件内容到内存中
+	data, err := io.ReadAll(file)
+	if err != nil {
+		file.Close()
+		return nil, err
+	}
 
-//go:embed models/enzh/model.enzh.intgemm.alphas.bin
-var testModelEnZh []byte
+	file.Close()
+	return bytes.NewBuffer(data), nil
+}
 
-//go:embed models/enzh/lex.50.50.enzh.s2t.bin
-var testShortlistEnZh []byte
+// 获取项目根目录
+func getProjectRoot() (string, error) {
+	// 当前工作目录
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
 
-//go:embed models/enzh/srcvocab.enzh.spm
-var testSrcVocabularyEnZh []byte
+	// 如果当前目录是test子目录，则返回父目录
+	if filepath.Base(cwd) == "test" {
+		return filepath.Dir(cwd), nil
+	}
 
-//go:embed models/enzh/trgvocab.enzh.spm
-var testTrgVocabularyEnZh []byte
+	// 检查是否已经在项目根目录
+	if _, err := os.Stat(filepath.Join(cwd, "models")); err == nil {
+		return cwd, nil
+	}
+
+	// 向上查找直到找到包含models目录的目录
+	for dir := cwd; dir != "/"; dir = filepath.Dir(dir) {
+		if _, err := os.Stat(filepath.Join(dir, "models")); err == nil {
+			return dir, nil
+		}
+	}
+
+	return "", errors.New("cannot find project root directory containing models folder")
+}
+
+// 模型文件路径
+var (
+	testModelPath      = filepath.Join("models", "enru", "model.enru.intgemm.alphas.bin")
+	testShortlistPath  = filepath.Join("models", "enru", "lex.50.50.enru.s2t.bin")
+	testVocabularyPath = filepath.Join("models", "enru", "vocab.enru.spm")
+
+	testModelEnZhPath         = filepath.Join("models", "enzh", "model.enzh.intgemm.alphas.bin")
+	testShortlistEnZhPath     = filepath.Join("models", "enzh", "lex.50.50.enzh.s2t.bin")
+	testSrcVocabularyEnZhPath = filepath.Join("models", "enzh", "srcvocab.enzh.spm")
+	testTrgVocabularyEnZhPath = filepath.Join("models", "enzh", "trgvocab.enzh.spm")
+)
 
 func testBundle(t *testing.T) gobergamot.FilesBundle {
 	if t != nil {
 		t.Helper()
 	}
+
+	model, err := loadModelFile(testModelPath)
+	if err != nil && t != nil {
+		t.Fatalf("failed to load model file: %v", err)
+	}
+
+	shortlist, err := loadModelFile(testShortlistPath)
+	if err != nil && t != nil {
+		t.Fatalf("failed to load shortlist file: %v", err)
+	}
+
+	vocabulary, err := loadModelFile(testVocabularyPath)
+	if err != nil && t != nil {
+		t.Fatalf("failed to load vocabulary file: %v", err)
+	}
+
 	return gobergamot.FilesBundle{
-		Model:            bytes.NewBuffer(testModel),
-		LexicalShortlist: bytes.NewBuffer(testShortlist),
-		Vocabularies:     []io.Reader{bytes.NewBuffer(testVocabulary)},
+		Model:            model,
+		LexicalShortlist: shortlist,
+		Vocabularies:     []io.Reader{vocabulary},
 	}
 }
 
@@ -317,10 +379,31 @@ func testBundleWithTwoVocabularies(t *testing.T) gobergamot.FilesBundle {
 	if t != nil {
 		t.Helper()
 	}
+
+	model, err := loadModelFile(testModelPath)
+	if err != nil && t != nil {
+		t.Fatalf("failed to load model file: %v", err)
+	}
+
+	shortlist, err := loadModelFile(testShortlistPath)
+	if err != nil && t != nil {
+		t.Fatalf("failed to load shortlist file: %v", err)
+	}
+
+	vocabulary, err := loadModelFile(testVocabularyPath)
+	if err != nil && t != nil {
+		t.Fatalf("failed to load vocabulary file: %v", err)
+	}
+
+	vocabulary2, err := loadModelFile(testVocabularyPath)
+	if err != nil && t != nil {
+		t.Fatalf("failed to load second vocabulary file: %v", err)
+	}
+
 	return gobergamot.FilesBundle{
-		Model:            bytes.NewBuffer(testModel),
-		LexicalShortlist: bytes.NewBuffer(testShortlist),
-		Vocabularies:     []io.Reader{bytes.NewBuffer(testVocabulary), bytes.NewBuffer(testVocabulary)},
+		Model:            model,
+		LexicalShortlist: shortlist,
+		Vocabularies:     []io.Reader{vocabulary, vocabulary2},
 	}
 }
 
@@ -328,10 +411,31 @@ func testBundleEnZh(t *testing.T) gobergamot.FilesBundle {
 	if t != nil {
 		t.Helper()
 	}
+
+	model, err := loadModelFile(testModelEnZhPath)
+	if err != nil && t != nil {
+		t.Fatalf("failed to load enzh model file: %v", err)
+	}
+
+	shortlist, err := loadModelFile(testShortlistEnZhPath)
+	if err != nil && t != nil {
+		t.Fatalf("failed to load enzh shortlist file: %v", err)
+	}
+
+	srcVocabulary, err := loadModelFile(testSrcVocabularyEnZhPath)
+	if err != nil && t != nil {
+		t.Fatalf("failed to load enzh source vocabulary file: %v", err)
+	}
+
+	trgVocabulary, err := loadModelFile(testTrgVocabularyEnZhPath)
+	if err != nil && t != nil {
+		t.Fatalf("failed to load enzh target vocabulary file: %v", err)
+	}
+
 	return gobergamot.FilesBundle{
-		Model:            bytes.NewBuffer(testModelEnZh),
-		LexicalShortlist: bytes.NewBuffer(testShortlistEnZh),
-		Vocabularies:     []io.Reader{bytes.NewBuffer(testSrcVocabularyEnZh), bytes.NewBuffer(testTrgVocabularyEnZh)},
+		Model:            model,
+		LexicalShortlist: shortlist,
+		Vocabularies:     []io.Reader{srcVocabulary, trgVocabulary},
 	}
 }
 
