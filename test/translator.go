@@ -281,25 +281,25 @@ func TestTranslator_TranslateEnZh(t *testing.T) {
 	}
 }
 
-//go:embed test/enru/model.enru.intgemm.alphas.bin
+//go:embed models/enru/model.enru.intgemm.alphas.bin
 var testModel []byte
 
-//go:embed test/enru/lex.50.50.enru.s2t.bin
+//go:embed models/enru/lex.50.50.enru.s2t.bin
 var testShortlist []byte
 
-//go:embed test/enru/vocab.enru.spm
+//go:embed models/enru/vocab.enru.spm
 var testVocabulary []byte
 
-//go:embed test/enzh/model.enzh.intgemm.alphas.bin
+//go:embed models/enzh/model.enzh.intgemm.alphas.bin
 var testModelEnZh []byte
 
-//go:embed test/enzh/lex.50.50.enzh.s2t.bin
+//go:embed models/enzh/lex.50.50.enzh.s2t.bin
 var testShortlistEnZh []byte
 
-//go:embed test/enzh/srcvocab.enzh.spm
+//go:embed models/enzh/srcvocab.enzh.spm
 var testSrcVocabularyEnZh []byte
 
-//go:embed test/enzh/trgvocab.enzh.spm
+//go:embed models/enzh/trgvocab.enzh.spm
 var testTrgVocabularyEnZh []byte
 
 func testBundle(t *testing.T) gobergamot.FilesBundle {
